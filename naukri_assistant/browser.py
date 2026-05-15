@@ -940,28 +940,37 @@ class NaukriBrowser:
         choices: list[str],
         answer_memory: AnswerMemory,
     ):
-        exact = answer_memory.exact_match(question)
+        exact = answer_memory.exact_match(
+            question,
+            answer_type=answer_type,
+            choices=choices,
+        )
         if exact:
-            answer_memory.touch(exact)
-            return exact.answer
+            updated = answer_memory.touch(exact)
+            return answer_memory.compatible_answer_value(updated, choices)
 
-        fuzzy = answer_memory.best_fuzzy_match(question)
+        if answer_memory.exact_match(question):
+            print()
+            print("Saved answer found for this question, but its field type or options do not match the current field.")
+
+        fuzzy = answer_memory.best_fuzzy_match(
+            question,
+            answer_type=answer_type,
+            choices=choices,
+        )
         if fuzzy:
             print()
             print(f"Stored similar question: {fuzzy.answer.raw_questions[0]}")
             print(f"Current question: {question}")
-            print(f"Suggested answer: {fuzzy.answer.answer}")
+            suggested_answer = answer_memory.compatible_answer_value(fuzzy.answer, choices)
+            print(f"Suggested answer: {suggested_answer}")
             # use_saved = input("Use this saved answer? [y/N]: ").strip().lower()
             use_saved = "y"
             if use_saved == "y":
                 updated = answer_memory.touch(fuzzy.answer)
-                return updated.answer
+                return answer_memory.compatible_answer_value(updated, choices)
 
-        print()
-        print(f"Required question: {question}")
-        if choices:
-            print(f"Choices: {', '.join(choices)}")
-        answer = input("Answer: ").strip()
+        answer = self._prompt_for_answer(question=question, choices=choices)
         if not answer:
             return None
         remembered = answer_memory.remember(
@@ -971,6 +980,36 @@ class NaukriBrowser:
             choices=choices,
         )
         return remembered.answer
+
+    def _prompt_for_answer(self, *, question: str, choices: list[str]):
+        print()
+        print(f"Required question: {question}")
+        if not choices:
+            return input("Answer: ").strip()
+
+        print("Choices:")
+        for index, choice in enumerate(choices, start=1):
+            print(f"  {index}. {choice}")
+        while True:
+            answer = input("Answer: ").strip()
+            if not answer:
+                return None
+            matched_choice = self._match_choice_answer(answer, choices)
+            if matched_choice is not None:
+                return matched_choice
+            print("Answer must match one of the listed choices. You can type the choice text or its number.")
+
+    @staticmethod
+    def _match_choice_answer(answer: str, choices: list[str]) -> str | None:
+        target = normalize_space(answer).lower()
+        for choice in choices:
+            if normalize_space(choice).lower() == target:
+                return normalize_space(choice)
+        if answer.isdigit():
+            index = int(answer) - 1
+            if 0 <= index < len(choices):
+                return normalize_space(choices[index])
+        return None
 
     def _fill_control(self, control: Locator, answer, answer_type: AnswerType) -> None:
         if answer_type == AnswerType.SINGLE_SELECT:

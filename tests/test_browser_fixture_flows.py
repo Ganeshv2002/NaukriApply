@@ -114,6 +114,84 @@ def test_fill_visible_select_question_with_saved_answer(tmp_path: Path) -> None:
     assert value == "Yes"
 
 
+def test_fill_visible_select_reprompts_when_saved_answer_type_differs(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    html = """
+    <form>
+      <label for="experience">How many years of experience do you have in Nextjs?</label>
+      <select id="experience">
+        <option value="">Choose</option>
+        <option>No experience</option>
+        <option>1-3 years</option>
+      </select>
+    </form>
+    """
+    memory = AnswerMemory()
+    memory.remember(
+        question="How many years of experience do you have in Nextjs?",
+        answer_value="2",
+        answer_type=AnswerType.TEXT,
+    )
+    monkeypatch.setattr("builtins.input", lambda *_args, **_kwargs: "1-3 years")
+
+    with NaukriBrowser(tmp_path / "browser-profile", headless=True) as browser:
+        browser.active_page.set_content(html)
+        browser._fill_visible_questionnaire(memory)
+        value = browser.active_page.locator("#experience").input_value()
+
+    assert value == "1-3 years"
+    assert len(memory.answers) == 2
+    select_match = memory.exact_match(
+        "How many years of experience do you have in Nextjs?",
+        answer_type=AnswerType.SINGLE_SELECT,
+        choices=["Choose", "No experience", "1-3 years"],
+    )
+    assert select_match is not None
+    assert select_match.answer == "1-3 years"
+
+
+def test_resolve_answer_reprompts_when_saved_option_is_unavailable(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    question = "Are you willing to relocate?"
+    memory = AnswerMemory()
+    memory.remember(
+        question=question,
+        answer_value="Maybe",
+        answer_type=AnswerType.SINGLE_SELECT,
+        choices=["Maybe", "No"],
+    )
+    browser = NaukriBrowser(tmp_path / "browser-profile", headless=True)
+    monkeypatch.setattr("builtins.input", lambda *_args, **_kwargs: "No")
+
+    answer = browser._resolve_answer_value(
+        question=question,
+        answer_type=AnswerType.SINGLE_SELECT,
+        choices=["Yes", "No"],
+        answer_memory=memory,
+    )
+
+    assert answer == "No"
+    assert len(memory.answers) == 2
+
+    def fail_input(*_args, **_kwargs):
+        raise AssertionError("input should not be called when a compatible answer exists")
+
+    monkeypatch.setattr("builtins.input", fail_input)
+    assert (
+        browser._resolve_answer_value(
+            question=question,
+            answer_type=AnswerType.SINGLE_SELECT,
+            choices=["Yes", "No"],
+            answer_memory=memory,
+        )
+        == "No"
+    )
+
+
 def test_external_redirect_text_detection(tmp_path: Path) -> None:
     html = "<button>Apply on Company Website</button>"
     with NaukriBrowser(tmp_path / "browser-profile", headless=True) as browser:
