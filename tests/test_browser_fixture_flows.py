@@ -69,6 +69,38 @@ def test_company_and_experience_fall_back_to_job_url() -> None:
     assert NaukriBrowser._guess_experience("", url) == "2-5 years"
 
 
+def test_extract_visible_candidates_uses_full_naukri_result_row_for_posted_age(tmp_path: Path) -> None:
+    html = """
+    <div class="srp_container fl loggedIn">
+      <div id="150526502873" class="row">
+        <span class="content">
+          <ul>
+            <li class="desig">
+              <a id="jdUrl" href="https://www.naukri.com/job-listings-frontend-developer-acme-2-to-4-years-150526502873">
+                Frontend Developer
+              </a>
+            </li>
+          </ul>
+          <div>Acme Software</div>
+          <div>2-4 yrs</div>
+          <div>React, JavaScript, CSS</div>
+        </span>
+        <span>Posted  Today</span>
+      </div>
+    </div>
+    """
+    with NaukriBrowser(tmp_path / "browser-profile", headless=True) as browser:
+        browser.active_page.set_content(html)
+        candidates = browser._extract_visible_candidates(
+            "https://www.naukri.com/search?k=frontend+developer&experience=2&jobAge=30",
+            max_posted_age_days=30,
+        )
+
+    assert len(candidates) == 1
+    assert candidates[0].title == "Frontend Developer"
+    assert "Posted Today" in candidates[0].raw_text
+
+
 def test_fill_visible_questionnaire_with_saved_exact_answer(tmp_path: Path) -> None:
     html = """
     <form>

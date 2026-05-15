@@ -215,6 +215,27 @@ class NaukriBrowser:
         payload = self.active_page.evaluate(
             """
             () => {
+              const hasPostedAge = (text) =>
+                /\\bposted\\s+(?:today|yesterday|just now|few hours ago|\\d+\\+?\\s+(?:days?|weeks?|months?)\\s+ago)/i.test(text || "");
+              const findJobCard = (anchor) => {
+                const preferred = anchor.closest(
+                  "article, section, div.row, [class*='srp-jobtuple'], [class*='jobTuple'], [class*='cust-job-tuple'], [class*='tuple']"
+                );
+                if (preferred && hasPostedAge(preferred.innerText || preferred.textContent || "")) {
+                  return preferred;
+                }
+
+                let node = anchor.parentElement;
+                while (node && node !== document.body) {
+                  const text = (node.innerText || node.textContent || "").trim();
+                  if (hasPostedAge(text) && text.length <= 5000) {
+                    return node;
+                  }
+                  node = node.parentElement;
+                }
+
+                return preferred || anchor.closest("article, li, section, div") || anchor.parentElement;
+              };
               const anchors = [...document.querySelectorAll("a[href]")];
               const picked = [];
               for (const anchor of anchors) {
@@ -232,7 +253,7 @@ class NaukriBrowser:
                   parsed.pathname.includes("/job-listings-") ||
                   parsed.pathname.includes("/job-listing-");
                 if (!isNaukriHost || !isJobListing) continue;
-                const card = anchor.closest("article, li, section, div") || anchor.parentElement;
+                const card = findJobCard(anchor);
                 const cardText = (card?.innerText || "").trim();
                 if (!cardText) continue;
                 picked.push({
